@@ -86,5 +86,6 @@ Checked on 2026-07-03. fal.ai currently documents several video-to-video / video
 - `fal-ai/sora-2/video-to-video`
 ## 模型支援限制
 
-目前 `google/gemini-omni-flash/edit` 官方 schema 只支援 `prompt` + `video_url`；`xai/grok-imagine-video/edit-video` 只支援 `prompt` + `video_url` + `resolution`。Before / after 圖和 mask 可以上傳到 fal storage 作紀錄，但這些模型不會把它們當正式 input 讀取。新版 UI 會在提交前警告，並在處理狀態中列出 `submitted_input` 和 `uploaded_but_not_model_input`。
+新版預設使用 `fal-ai/kling-video/o1/video-to-video/edit`，官方 schema 支援 `prompt` + `video_url` + `image_urls`。Before / after 圖和紅色標記截圖會正式放入 `image_urls`，並在 prompt 中以 `@Image1`, `@Image2`, `@Image3` 引用。注意：這不是硬性 `mask_url` inpainting；紅色標記會以參考圖方式交給模型理解。`google/gemini-omni-flash/edit` 和 `xai/grok-imagine-video/edit-video` 仍只支援文字 + 影片，UI 會在提交前警告。
+
 

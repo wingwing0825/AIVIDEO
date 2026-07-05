@@ -1,41 +1,33 @@
 ﻿const models = [
   {
+    id: "fal-ai/kling-video/o1/video-to-video/edit",
+    name: "Kling Video O1 Edit",
+    tag: "可讀參考圖",
+    note: "官方支援 video_url + image_urls。適合用原片加 before/after/紅色標記截圖做影片修復測試。",
+    limits: "Input: prompt + video_url + image_urls + keep_audio"
+  },
+  {
+    id: "bytedance/seedance-2.0/reference-to-video",
+    name: "Seedance 2.0 Reference To Video",
+    tag: "多模態參考",
+    note: "官方支援最多 9 張圖、3 條影片、3 段音訊作 reference。較像重新生成參考影片，不一定保留原片逐格結構。",
+    limits: "Input: prompt + image_urls + video_urls + audio_urls"
+  },
+  {
     id: "google/gemini-omni-flash/edit",
     name: "Gemini Omni Flash Edit",
-    tag: "精準指令",
-    note: "適合按明確限制做局部修復，重點是保留未標記位置。",
+    tag: "只讀文字+影片",
+    note: "官方 schema 只支援 prompt + video_url；不會正式讀取 before/after/mask 圖。",
     limits: "Input: prompt + video_url"
   },
   {
     id: "xai/grok-imagine-video/edit-video",
     name: "Grok Imagine Edit Video",
-    tag: "通用 video edit",
-    note: "文字引導影片編輯。fal 文件曾標示輸入影片有解像度/時長限制，正式提交前要再核對。",
+    tag: "只讀文字+影片",
+    note: "官方 schema 只支援 prompt + video_url + resolution；不會正式讀取 before/after/mask 圖。",
     limits: "Input: prompt + video_url + resolution"
-  },
-  {
-    id: "fal-ai/kling-video-o1/video-to-video",
-    name: "Kling Video O1 Video-to-Video",
-    tag: "video-to-video",
-    note: "fal 列出的 video-to-video 模型候選，適合做較完整的畫面修復測試。",
-    limits: "正式使用前核對最新 schema"
-  },
-  {
-    id: "fal-ai/kling-video-o3-pro/video-to-video",
-    name: "Kling Video O3 Pro Video-to-Video",
-    tag: "pro video-to-video",
-    note: "fal 列出的 pro video-to-video 候選，可作高質量替代 profile。",
-    limits: "正式使用前核對最新 schema"
-  },
-  {
-    id: "fal-ai/sora-2/video-to-video",
-    name: "Sora 2 Video-to-Video",
-    tag: "創意 v2v",
-    note: "fal 列出的 video-to-video 候選。若模型對原片保真足夠，可加入測試。",
-    limits: "正式使用前核對最新 schema"
   }
 ];
-
 const state = {
   selectedModel: models[0].id,
   maskImage: null,
@@ -45,6 +37,21 @@ const state = {
 };
 
 const modelSchemas = {
+  "fal-ai/kling-video/o1/video-to-video/edit": {
+    officialInputs: ["prompt", "video_url", "keep_audio", "image_urls", "elements"],
+    supportsVisualGuides: true,
+    visualGuideField: "image_urls",
+    maxGuideImages: 4,
+    note: "fal 官方 schema 支援 image_urls；before/after/紅色標記截圖會正式放入模型 input。沒有硬 mask_url 欄位，紅色標記會以參考圖方式讀取。"
+  },
+  "bytedance/seedance-2.0/reference-to-video": {
+    officialInputs: ["prompt", "image_urls", "video_urls", "audio_urls", "resolution", "duration", "aspect_ratio", "generate_audio"],
+    supportsVisualGuides: true,
+    visualGuideField: "image_urls",
+    maxGuideImages: 9,
+    usesVideoUrlsArray: true,
+    note: "fal 官方 schema 支援 image_urls 和 video_urls；較像 reference-to-video 重新生成，不是精準逐格修片。"
+  },
   "google/gemini-omni-flash/edit": {
     officialInputs: ["prompt", "video_url"],
     supportsVisualGuides: false,
@@ -317,11 +324,32 @@ function updateCompatibilityWarning() {
     : "";
 }
 
+function guideImageUrls(uploaded, maxCount = 4) {
+  return [
+    uploaded.before_reference_url,
+    uploaded.after_reference_url,
+    uploaded.marked_defect_frame_url || uploaded.defect_frame_url,
+    uploaded.mask_url
+  ].filter(Boolean).slice(0, maxCount);
+}
+
 function buildSubmittedInput(model, prompt, uploaded) {
-  const input = {
-    prompt,
-    video_url: uploaded.video_url
-  };
+  const schema = schemaFor(model);
+  const imageUrls = guideImageUrls(uploaded, schema.maxGuideImages || 4);
+  const input = { prompt };
+
+  if (schema.usesVideoUrlsArray) {
+    input.video_urls = uploaded.video_url ? [uploaded.video_url] : [];
+    input.image_urls = imageUrls;
+    input.resolution = "720p";
+    input.duration = "auto";
+    input.aspect_ratio = "auto";
+    input.generate_audio = false;
+  } else {
+    input.video_url = uploaded.video_url;
+    if (schema.supportsVisualGuides && imageUrls.length) input.image_urls = imageUrls;
+    if (schema.supportsVisualGuides) input.keep_audio = getChecked("noAudio") ? false : true;
+  }
 
   if (model.id.includes("grok-imagine")) {
     input.resolution = "auto";
@@ -335,6 +363,7 @@ function uploadedButNotModelInput(uploaded) {
     before_reference_url: uploaded.before_reference_url || null,
     after_reference_url: uploaded.after_reference_url || null,
     defect_frame_url: uploaded.defect_frame_url || null,
+    marked_defect_frame_url: uploaded.marked_defect_frame_url || null,
     mask_url: uploaded.mask_url || null,
     reason: "目前選擇的 fal video edit 模型 schema 沒有 before/after/mask 欄位，所以這些 URL 不會放入正式模型 input。"
   };
@@ -350,7 +379,7 @@ function buildPrompt() {
   if (extra) rules.push(`Additional repair direction: ${extra}`);
   if (getChecked("maskedOnly")) {
     if (schema.supportsVisualGuides && state.maskStrokes.length) {
-      rules.push("Only modify the red 50% opacity mask region. Everything outside the marked area must remain visually and temporally unchanged.");
+      rules.push("Use the uploaded reference images: @Image1 is the before/defect reference, @Image2 is the desired after direction, and @Image3 is the defect screenshot with red marks. Treat the red marks as the only intended repair regions. Everything outside those regions must remain visually and temporally unchanged.");
     } else {
       rules.push("Make the smallest possible localized repair based only on the written defect description. Do not alter unrelated areas.");
     }
@@ -372,12 +401,12 @@ function buildPrompt() {
   }
 
   if (schema.supportsVisualGuides && hasVisualGuides()) {
-    rules.push("The before reference image shows the unwanted defect. The after reference image shows the intended repair direction.");
+    rules.push("Read all provided @Image references carefully. @Image1 shows the unwanted defect, @Image2 shows the intended repair direction, and @Image3/@Image4 may show marked defect locations.");
   }
   rules.push("The repair must look natural, invisible, frame-consistent, and limited to defect cleanup only.");
 
   return [
-    "Task: video defect repair and invisible retouching.",
+    schema.usesVideoUrlsArray ? "Task: generate a repaired reference video from @Video1 and the supplied image references." : "Task: video defect repair and invisible retouching.",
     ...rules,
     "This is not style transfer. Do not beautify, redesign, relight, recolor, or reinterpret the shot. Keep everything else the same."
   ].join("\n");
@@ -406,9 +435,19 @@ function buildJson(prompt) {
     headers_preview: {
       Authorization: `Key ${maskedKey()}`
     },
-    input_sent_to_fal_preview: {
+    input_sent_to_fal_preview: schema.usesVideoUrlsArray ? {
       prompt,
-      video_url: videoUrl || "UPLOADED_VIDEO_URL_FROM_FAL_STORAGE"
+      video_urls: [videoUrl || "UPLOADED_VIDEO_URL_FROM_FAL_STORAGE"],
+      image_urls: schema.supportsVisualGuides ? ["@Image1 before_reference_url", "@Image2 after_reference_url", "@Image3 marked_defect_frame_url", "@Image4 mask_url"].slice(0, schema.maxGuideImages || 4) : [],
+      resolution: "720p",
+      duration: "auto",
+      aspect_ratio: "auto",
+      generate_audio: false
+    } : {
+      prompt,
+      video_url: videoUrl || "UPLOADED_VIDEO_URL_FROM_FAL_STORAGE",
+      image_urls: schema.supportsVisualGuides ? ["@Image1 before_reference_url", "@Image2 after_reference_url", "@Image3 marked_defect_frame_url", "@Image4 mask_url"].slice(0, schema.maxGuideImages || 4) : undefined,
+      keep_audio: schema.supportsVisualGuides ? !getChecked("noAudio") : undefined
     },
     uploaded_but_not_model_input_preview: {
       video_file_selected: Boolean(selectedFile(els.videoFile)),
@@ -569,6 +608,33 @@ async function getMaskFileIfAny() {
   return new File([blob], "repair-mask.png", { type: "image/png" });
 }
 
+async function getMarkedFrameFileIfAny() {
+  if (!state.maskImage || !state.maskStrokes.length) return null;
+  const exportCanvas = document.createElement("canvas");
+  exportCanvas.width = els.maskCanvas.width;
+  exportCanvas.height = els.maskCanvas.height;
+  const exportCtx = exportCanvas.getContext("2d");
+  exportCtx.drawImage(state.maskImage, 0, 0, exportCanvas.width, exportCanvas.height);
+  exportCtx.lineCap = "round";
+  exportCtx.lineJoin = "round";
+  exportCtx.strokeStyle = "rgba(255, 0, 0, 0.5)";
+
+  for (const stroke of state.maskStrokes) {
+    if (stroke.points.length < 2) continue;
+    exportCtx.lineWidth = stroke.size;
+    exportCtx.beginPath();
+    exportCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (const point of stroke.points.slice(1)) {
+      exportCtx.lineTo(point.x, point.y);
+    }
+    exportCtx.stroke();
+  }
+
+  const blob = await new Promise((resolve) => exportCanvas.toBlob(resolve, "image/png"));
+  if (!blob) return null;
+  return new File([blob], "marked-defect-frame.png", { type: "image/png" });
+}
+
 function safeJson(value) {
   return JSON.stringify(value, null, 2);
 }
@@ -609,7 +675,8 @@ async function submitFalJob() {
       before_reference_url: await uploadDirectToFal(fal, "執前參考圖", selectedFile(els.beforeImage)),
       after_reference_url: await uploadDirectToFal(fal, "執後參考圖", selectedFile(els.afterImage)),
       defect_frame_url: await uploadDirectToFal(fal, "瑕疵截圖", selectedFile(els.maskImage)),
-      mask_url: await uploadDirectToFal(fal, "紅色 mask", await getMaskFileIfAny())
+      marked_defect_frame_url: await uploadDirectToFal(fal, "紅色標記截圖", await getMarkedFrameFileIfAny()),
+      mask_url: await uploadDirectToFal(fal, "透明 mask", await getMaskFileIfAny())
     };
 
     if (!uploaded.video_url) {
@@ -621,8 +688,10 @@ async function submitFalJob() {
 
     statusLine(`提交到 fal 模型: ${model.id}`);
     statusLine(`實際送入模型 input 欄位: ${Object.keys(input).join(", ")}`);
-    if (!schema.supportsVisualGuides && (uploaded.before_reference_url || uploaded.after_reference_url || uploaded.defect_frame_url || uploaded.mask_url)) {
+    if (!schema.supportsVisualGuides && (uploaded.before_reference_url || uploaded.after_reference_url || uploaded.defect_frame_url || uploaded.marked_defect_frame_url || uploaded.mask_url)) {
       statusLine("注意：參考圖 / mask 已上傳，但此模型 schema 不會正式讀取它們。");
+    } else if (schema.supportsVisualGuides && input.image_urls?.length) {
+      statusLine(`參考圖已正式送入模型 image_urls: ${input.image_urls.length} 張`);
     }
     const result = await fal.subscribe(model.id, {
       input,
@@ -725,6 +794,13 @@ renderModels();
 bindEvents();
 redrawMask();
 updateOutputs();
+
+
+
+
+
+
+
 
 
 
