@@ -1,0 +1,104 @@
+﻿<!doctype html>
+<html lang="zh-HK">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Video Repair Console</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">fal.ai video repair workflow</p>
+          <h1>AI Video Repair Console</h1>
+          <p class="lede">上傳影片、標記瑕疵位置，然後按一下開始修復。英文提示詞會在後台自動生成，不需要你自己處理。</p>
+        </div>
+        <div class="status-pill"><span class="dot"></span>Vercel / fal.ai ready</div>
+      </header>
+
+      <section class="workspace">
+        <form class="control-panel" id="repairForm">
+          <section class="panel">
+            <div class="panel-head"><div><h2>1. fal API Key</h2><p>輸入你的 fal API key。此版本會直接在瀏覽器上傳到 fal storage，適合自己使用；不要公開給其他人共用。</p></div></div>
+            <div class="key-row">
+              <label class="field key-field"><span>fal API key</span><input id="apiKey" type="password" autocomplete="off" placeholder="fal_xxx 或你的 FAL_KEY" /></label>
+              <button type="button" id="toggleKey">顯示</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><h2>2. 上傳原片</h2><p>直接選擇影片檔即可，不需要填 video URL。影片會先在這裡預覽，再直接由瀏覽器上傳到 fal storage。</p></div></div>
+            <div class="upload-box">
+              <label class="native-upload"><span class="upload-title">選擇影片檔</span><input id="videoFile" class="native-file" type="file" accept="video/*" /></label>
+              <span class="file-name" id="videoFileName">未選擇影片</span>
+            </div>
+            <details class="advanced">
+              <summary>進階：我已有公開 video URL</summary>
+              <label class="field"><span>video_url（可留空）</span><input id="videoUrl" type="url" placeholder="https://.../input.mp4" /></label>
+            </details>
+            <div class="preview-frame video-frame"><video id="videoPreview" controls playsinline></video><div class="empty-state" id="videoEmpty">影片預覽會出現在這裡</div></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><h2>3. 選 fal 模型</h2><p>預設選精準指令模型。其他 video-to-video 模型可作測試。</p></div></div>
+            <div class="model-grid" id="modelGrid" role="radiogroup" aria-label="fal.ai model"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><h2>4. 修復規則</h2><p>你只要用中文描述；後台會自動轉成英文指令給 AI。</p></div></div>
+            <div class="check-grid">
+              <label class="check-card"><input type="checkbox" id="lockColor" checked /><span><strong>不可改色 / LUT</strong><small>保留白平衡、對比、飽和度、曝光和整體光暗。</small></span></label>
+              <label class="check-card"><input type="checkbox" id="useFullVideo" checked /><span><strong>必須用全片</strong><small>保持時間、動作、鏡頭連續性和原片長度。</small></span></label>
+              <label class="check-card"><input type="checkbox" id="maskedOnly" checked /><span><strong>只改標記範圍</strong><small>紅色 mask 外所有位置盡量保持不變。</small></span></label>
+              <label class="check-card"><input type="checkbox" id="preserveIdentity" checked /><span><strong>保留人/物身份</strong><small>臉、手、文字、logo、衣物和材質不可重畫。</small></span></label>
+              <label class="check-card"><input type="checkbox" id="noCrop" checked /><span><strong>不可裁切構圖</strong><small>不改 framing、角度、焦距感或鏡頭位置。</small></span></label>
+              <label class="check-card"><input type="checkbox" id="noAudio" checked /><span><strong>不處理聲音</strong><small>只修畫面，音訊照原片。</small></span></label>
+            </div>
+            <label class="field"><span>瑕疵描述</span><textarea id="defectText" rows="4" placeholder="例如：右上角牆身有污漬、人物面上有暗瘡、畫面中間有壓縮格仔或閃爍。"></textarea></label>
+            <label class="field"><span>額外要求</span><textarea id="extraText" rows="3" placeholder="例如：自然修補皮膚紋理；不要磨皮；不要改背景燈光；不要改衣服顏色。"></textarea></label>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head"><div><h2>5. Before / After 參考圖</h2><p>可選。一張放執前瑕疵，一張放你希望修完大約的方向。</p></div></div>
+            <div class="reference-grid">
+              <div class="image-uploader"><label class="native-upload small"><span class="upload-title">選擇執前圖</span><input id="beforeImage" class="native-file" type="file" accept="image/*" /></label><span class="file-name" id="beforeFileName">未選擇圖片</span><img id="beforePreview" alt="執前參考圖預覽" /></div>
+              <div class="image-uploader"><label class="native-upload small"><span class="upload-title">選擇執後圖</span><input id="afterImage" class="native-file" type="file" accept="image/*" /></label><span class="file-name" id="afterFileName">未選擇圖片</span><img id="afterPreview" alt="執後方向圖預覽" /></div>
+            </div>
+          </section>
+        </form>
+
+        <aside class="side-panel">
+          <section class="panel mask-panel">
+            <div class="panel-head"><div><h2>6. Mask 標記</h2><p>上傳有瑕疵的一格圖，用紅底 50% 透明度筆刷標記「只准改」的位置。</p></div></div>
+            <div class="upload-box"><label class="native-upload"><span class="upload-title">選擇瑕疵截圖</span><input id="maskImage" class="native-file" type="file" accept="image/*" /></label><span class="file-name" id="maskFileName">未選擇截圖</span></div>
+            <div class="brush-row"><label class="range-field"><span>筆刷</span><input id="brushSize" type="range" min="6" max="96" value="34" /></label><button class="icon-button" type="button" id="undoMask" title="復原最後一筆">Undo</button><button class="icon-button danger" type="button" id="clearMask" title="清除 mask">Clear</button></div>
+            <div class="canvas-wrap"><canvas id="maskCanvas" width="900" height="506"></canvas><div class="empty-state" id="maskEmpty">未載入圖片</div></div>
+            <div class="action-row"><button type="button" id="downloadMask">下載 mask PNG</button></div>
+          </section>
+
+          <section class="panel submit-panel">
+            <div class="panel-head"><div><h2>7. 開始修復影片</h2><p>按一下就會直接上傳影片和圖片到 fal storage，然後提交 fal job。英文 prompt 和 request 會在後台自動處理。</p></div></div>
+            <div class="compat-warning" id="compatWarning" hidden></div>
+            <button class="primary-action" type="button" id="submitFalJob">開始上傳並修復</button>
+            <label class="field"><span>處理狀態</span><textarea id="cloudStatus" rows="8" readonly placeholder="上傳和提交結果會顯示在這裡"></textarea></label>
+            <details class="advanced"><summary>進階：查看後台 request</summary><label class="field"><span>fal request preview</span><textarea id="jsonOutput" rows="9" readonly></textarea></label><button type="button" id="copyJson">複製 JSON</button><button type="button" id="downloadSpec">下載 repair-spec.json</button></details>
+            <textarea id="promptOutput" hidden readonly></textarea>
+            <button type="button" id="copyPrompt" hidden>複製英文 prompt</button>
+          </section>
+
+          <section class="panel result-panel">
+            <div class="panel-head"><div><h2>8. 修復結果</h2><p>fal 完成後，如果 server 回傳影片 URL，會自動載入；你也可以手動貼上 result video URL。</p></div></div>
+            <label class="field"><span>result video_url</span><input id="resultVideoUrl" type="url" placeholder="https://.../output.mp4" /></label>
+            <div class="preview-frame video-frame"><video id="resultVideoPreview" controls playsinline></video><div class="empty-state" id="resultVideoEmpty">修復後影片會出現在這裡</div></div>
+            <div class="action-row"><button type="button" id="loadResultVideo">載入結果影片</button><a class="button-link" id="downloadResultVideo" href="#" download>下載結果影片</a></div>
+          </section>
+        </aside>
+      </section>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
+
+

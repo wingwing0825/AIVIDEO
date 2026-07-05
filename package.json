@@ -1,0 +1,15 @@
+{
+  "name": "aivideo-repair-console",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node local-server.js"
+  },
+  "dependencies": {
+    "@fal-ai/client": "^1.6.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
